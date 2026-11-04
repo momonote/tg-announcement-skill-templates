@@ -1,0 +1,356 @@
+{
+  "name": "TG 公告本地化翻译子w f",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "masterText"
+            },
+            {
+              "name": "brand"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        192
+      ],
+      "id": "f3ea8c88-5764-4f36-b618-23f1029f7c4e",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.masterText }}",
+        "options": {
+          "systemMessage": "你是 [BRAND_B] (B2) 品牌的多语言翻译专家。请将母版翻译为：EN / RU / PT / ES / FA 五种语言。\n语气必须符合：生动、活泼、亲切、社区感。视角是 Peer-to-Peer「懂技术的资深群友」。\n【词库】instant, smooth, hassle-free, unlocked, level up...\n【禁用】We are thrilled, We are pleased to announce。\n【输出格式】纯 JSON：{\"en\":\"\", \"ru\":\"\", \"pt\":\"\", \"es\":\"\", \"fa\":\"\"}\n必须包含署名：[BRAND_B] Team (各语言本地化)，底部保留链接：[Website](https://[BRAND_B_DOMAIN]) | [Bot](...) | [Group](...)\nHTML排版：加粗用 <b>，换行用 <br>，链接用 <a href=\"\">。严禁 Markdown。\n【格式硬校验与重写规则（必须严格执行）】\n在输出最终 JSON 之前，你必须进行自我审核，不通过则重写：\n1. 【黑体校验】HTML的加粗标签必须严格闭合。必须使用 <b>文字</b>。严禁出现残缺的 <b>文字 或 只有 </b>。加粗位置必须逐处对齐母版（母版加粗的小标、动作，译版对应位置必须同样加粗）。\n2. 【超链接校验】所有链接必须使用 <a href=\"URL\">文案</a> 格式，严禁出现裸链接，且标签必须严格闭合。\n3. 【Emoji校验】Emoji 必须在合理位置出现，严禁连续堆叠同一个 Emoji。 \n4. 【排版校验】换行必须使用 <br>，严禁使用 \\n 或 Markdown 的换行。\n5. 【语言完整性】每个语言版本都必须完整包含母版的所有段落和署名/Footer，不得遗漏。\n6. 署名必须使用对应语言本地化（如 EN: [BRAND_B] Team, RU: Команда [BRAND_B] 等），底部必须带 `[Website](...) | [Bot](...) | [Group](...)` 的 HTML 超链接行\n\n🚨🚨【最高级别格式保护铁律】🚨🚨\n在输出文本时，你必须严格遵守以下排版规则，绝不允许篡改原文格式：\n1. 绝对禁止使用 Markdown 语法！绝对禁止输出 `**` 符号！\n2. 如果需要加粗文字，必须且只能原样保留或输出 HTML 标签：<b>文字内容</b>。\n3. 原文中如果带有 <tg-emoji emoji-id=\"...\"> 格式的标签，必须原封不动地保留，禁止删除、禁止修改其中的 emoji-id 数字、禁止将其转换为普通表情！"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        464,
+        0
+      ],
+      "id": "936af833-fc00-454c-8d5a-7fab2ef84d81",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-4-argon",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        128
+      ],
+      "id": "a41fdba0-86a1-4884-a550-ed06b527096e",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.brand }}",
+                    "rightValue": "[BRAND_B]",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "385a466f-8339-47ee-84a1-17111965f9ea"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "10a2deaa-f04c-4031-b502-cc21a3a7bd8a",
+                    "leftValue": "={{ $json.brand }}",
+                    "rightValue": "[BRAND_A]",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a8e052e6-dfb0-452a-8568-f734f76732c5",
+                    "leftValue": "={{ $json.brand }}",
+                    "rightValue": "[BRAND_C]",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        192
+      ],
+      "id": "e47b0906-60d1-4497-9ed4-ddb438029aa9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.masterText }}",
+        "options": {
+          "systemMessage": "你是 [BRAND_A] (B1) 品牌的多语言翻译专家。请将母版翻译为：EN / RU 两种语言。\n语气必须符合：官方句式（We're excited to announce... / Notice:），专业、稳健、商务。\n【词库】smooth, pristine, stable, uninterrupted, shielded...\n【输出格式】纯 JSON：{\"en\":\"\", \"ru\":\"\"}\n\n【署名本地化规则】\n署名必须进行本地化翻译，各语言版本均需呈现自然的本地化句式，严禁在 RU 版本中直接保留英文。\n- EN 版本基准：Your privacy is our top priority. Stay secure. Stay private. Stay connected with [BRAND_A].\n- RU 版本需将其翻译为贴合俄语母语者阅读习惯的表达（如：Ваша конфиденциальность — наш главный приоритет. Оставайтесь в безопасности. Оставайтесь на связи с [BRAND_A].）\n\n【格式硬校验与重写规则（必须严格执行）】\n在输出最终 JSON 之前，你必须进行自我审核，不通过则重写：\n1. 【黑体校验】HTML的加粗标签必须严格闭合。必须使用 <b>文字</b>。严禁出现残缺的 <b>文字 或 只有 </b>。加粗位置必须逐处对齐母版。\n2. 【超链接校验】所有链接必须使用 <a href=\"URL\">文案</a> 格式，严禁出现裸链接，且标签必须严格闭合。\n3. 【Emoji校验】Emoji 必须在合理位置出现，严禁连续堆叠同一个 Emoji。 \n4. 【排版校验】换行必须使用 <br>，严禁使用 \\n 或 Markdown 的换行。\n5. 【语言完整性】每个语言版本都必须完整包含母版的所有段落和署名/Footer，不得遗漏。\n\n🚨🚨【最高级别格式保护铁律】🚨🚨\n在输出文本时，你必须严格遵守以下排版规则，绝不允许篡改原文格式：\n1. 绝对禁止使用 Markdown 语法！绝对禁止输出 `**` 符号！\n2. 如果需要加粗文字，必须且只能原样保留或输出 HTML 标签：<b>文字内容</b>。\n3. 原文中如果带有 <tg-emoji emoji-id=\"...\"> 格式的标签，必须原封不动地保留，禁止删除、禁止修改其中的 emoji-id 数字、禁止将其转换为普通表情！"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        480,
+        224
+      ],
+      "id": "35d5aecb-c015-4ad1-9e70-b41ffb74eaea",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.masterText }}",
+        "options": {
+          "systemMessage": "你是 [BRAND_C] (B3) 品牌的多语言翻译专家。请将母版翻译为：RU 发布版 + EN 审核对照版。\n语气必须符合：硬核运维 + 贴心支持（排障冷静、升级有力）。\n【词库】Масштабное обновление, Стабильность соединений...\n【输出格式】纯 JSON：{\"ru\":\"\", \"en\":\"\"}\n必须包含署名：Команда [BRAND_C] (RU版) / [BRAND_C] Team (EN版)，及固定 footer。\nHTML排版：加粗用 <b>，换行用 <br>。严禁 Markdown。\n【格式硬校验与重写规则（必须严格执行）】\n在输出最终 JSON 之前，你必须进行自我审核，不通过则重写：\n1. 【黑体校验】HTML的加粗标签必须严格闭合。必须使用 <b>文字</b>。严禁出现残缺的 <b>文字 或 只有 </b>。加粗位置必须逐处对齐母版（母版加粗的小标、动作，译版对应位置必须同样加粗）。\n2. 【超链接校验】所有链接必须使用 <a href=\"URL\">文案</a> 格式，严禁出现裸链接，且标签必须严格闭合。\n3. 【Emoji校验】Emoji 必须在合理位置出现，严禁连续堆叠同一个 Emoji。 \n4. 【排版校验】换行必须使用 <br>，严禁使用 \\n 或 Markdown 的换行。\n5. 【语言完整性】每个语言版本都必须完整包含母版的所有段落和署名/Footer，不得遗漏。\n6. RU发布版必须带固定 Footer：`Команда [BRAND_C]\\n--------------------------\\n🔔 Канал: @[BRAND_C_CHANNEL]\\n🔗 Бот: @[BRAND_C_BOT]\\n💬 Поддержка: @[BRAND_C_SUPPORT]`。\n7. EN对照版需镜像同结构 Footer (`[BRAND_C] Team...`)。\n\n🚨🚨【最高级别格式保护铁律】🚨🚨\n在输出文本时，你必须严格遵守以下排版规则，绝不允许篡改原文格式：\n1. 绝对禁止使用 Markdown 语法！绝对禁止输出 `**` 符号！\n2. 如果需要加粗文字，必须且只能原样保留或输出 HTML 标签：<b>文字内容</b>。\n3. 原文中如果带有 <tg-emoji emoji-id=\"...\"> 格式的标签，必须原封不动地保留，禁止删除、禁止修改其中的 emoji-id 数字、禁止将其转换为普通表情！"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        480,
+        432
+      ],
+      "id": "cddb9039-c0e0-441b-aff1-bb2689615621",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-4-argon",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        688,
+        352
+      ],
+      "id": "419c1f88-733c-4798-b03a-5eff93e10339",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-4-argon",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        560
+      ],
+      "id": "d95e86db-d61b-46e0-adfd-1b3a9836aa90",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let aiOutput = $json.output || \"\";\n// 清理 AI 可能带出的 markdown 代码块标记\naiOutput = aiOutput.replace(/```json/g, '').replace(/```/g, '').trim();\nlet parsed = {};\ntry {\n  parsed = JSON.parse(aiOutput);\n} catch(e) {\n  // 解析失败的兜底\n  parsed = { error: \"JSON Parse Failed\", raw: aiOutput };\n}\n\n// 核心修复：使用 .first() 强制回溯源头节点拿品牌\nconst originalBrand = $('When Executed by Another Workflow').first().json.brand || \"[BRAND_C]\";\n\nreturn {\n  json: {\n    brand: originalBrand, // 确保带出去\n    ...parsed // 展开语言字段 en, ru, pt 等\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        224
+      ],
+      "id": "853cea31-491e-4079-8a03-d38affa77448",
+      "name": "合并"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "合并",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "合并",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "合并",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "REDACTED_VERSION_ID",
+  "meta": {
+    "instanceId": "REDACTED_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "REDACTED_WORKFLOW_ID",
+  "tags": []
+}
