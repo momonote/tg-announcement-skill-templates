@@ -1,0 +1,1304 @@
+{
+  "name": "TG公告生成主w f",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        208,
+        -32
+      ],
+      "id": "4d4a6421-97c0-403a-825d-39ef837f9434",
+      "name": "Telegram Trigger",
+      "retryOnFail": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const triggerData = $('Telegram Trigger').first().json;\nconst rawText = triggerData.message?.text || triggerData.message?.caption || \"\";\nconst textLower = rawText.toLowerCase();\n\n// 1. 识别品牌\nlet brand = \"\";\nif (textLower.includes(\"[BRAND_A]\") || textLower.includes(\"[BRAND_A]\")) {\n  brand = \"[BRAND_A]\";\n} else if (textLower.includes(\"[BRAND_C]\") || textLower.includes(\"[BRAND_C]\") || textLower.includes(\"[BRAND_C]\")) {\n  brand = \"[BRAND_C]\";\n} else if (textLower.includes(\"[BRAND_B]\") || textLower.includes(\"[BRAND_B]\")) {\n  brand = \"[BRAND_B]\";\n} else {\n  brand = $getWorkflowStaticData('global').lastBrand || \"[BRAND_C]\"; \n}\n\n// 2. 将 Telegram 的 entities（加粗、斜体等）转换成 HTML 标签\nfunction convertTelegramFormat(message, plainText) {\n    if (!message || !plainText) return plainText || \"\";\n    let entities = message.entities || message.caption_entities || [];\n    if (!entities || entities.length === 0) return plainText;\n\n    // 按 offset 降序排序，从后往前替换，防止索引错位\n    entities.sort((a, b) => b.offset - a.offset);\n    let result = plainText;\n    \n    for (let entity of entities) {\n        let start = entity.offset;\n        let end = entity.offset + entity.length;\n        let startTag = \"\";\n        let endTag = \"\";\n        \n        switch (entity.type) {\n            case \"bold\": startTag = \"<b>\"; endTag = \"</b>\"; break;\n            case \"italic\": startTag = \"<i>\"; endTag = \"</i>\"; break;\n            case \"underline\": startTag = \"<u>\"; endTag = \"</u>\"; break;\n            case \"strikethrough\": startTag = \"<s>\"; endTag = \"</s>\"; break;\n            case \"code\": startTag = \"<code>\"; endTag = \"</code>\"; break;\n            case \"pre\": startTag = \"<pre>\"; endTag = \"</pre>\"; break;\n            case \"text_link\": startTag = `<a href=\"${entity.url}\">`; endTag = \"</a>\"; break;\n        }\n        \n        if (startTag && endTag) {\n            result = result.slice(0, start) + startTag + result.slice(start, end) + endTag + result.slice(end);\n        }\n    }\n    return result;\n}\n\n// 3. 处理用户的当前输入（将 TG 实体转为 HTML）\nlet userInputHtml = convertTelegramFormat(triggerData.message, rawText);\n// 顺便把可能混进去的 Markdown 也转成 HTML\nuserInputHtml = userInputHtml.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>');\n\n// 4. 处理 draft_content（把缓存里的 Markdown 统一转为 HTML）\nlet rawDraft = $getWorkflowStaticData('global').lastDraft || \"\";\nlet draftHtml = rawDraft.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>');\n\nreturn [{\n  json: {\n    brand: brand,\n    user_input: userInputHtml,\n    draft_content: draftHtml\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        -32
+      ],
+      "id": "52aa7433-682a-489e-a576-0f3094a07b7c",
+      "name": "筛选并拆分品牌与内容"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json;\nconst rawUserInput = inputData.user_input || \"\"; \nconst matchInput = rawUserInput.toLowerCase().trim();\n\nlet draftContent = inputData.draft_content || \"\";\nconst confirmWords = [\"过\", \"ok\", \"okey\", \"通过\", \"发布\", \"yes\"];\nconst hasConfirmWord = confirmWords.some(word => matchInput.includes(word));\n\nif (!draftContent && hasConfirmWord) {\n    draftContent = $getWorkflowStaticData('global').lastDraft || \"\";\n}\n\n// 品牌识别\nlet brand = inputData.brand || \"\";\nlet brand_code = \"\";\nlet default_partition = \"\";\n\nif (matchInput.includes(\"[BRAND_A]\") || matchInput.includes(\"[BRAND_A]\") || brand === \"[BRAND_A]\") {\n    brand = \"[BRAND_A]\"; brand_code = \"BRAND-B1\"; default_partition = \"P2\"; \n} else if (matchInput.includes(\"[BRAND_C]\") || matchInput.includes(\"[BRAND_C]\") || matchInput.includes(\"[BRAND_C]\") || brand === \"[BRAND_C]\") {\n    brand = \"[BRAND_C]\"; brand_code = \"BRAND-B3\"; default_partition = \"P10\"; \n} else if (matchInput.includes(\"[BRAND_B]\") || brand === \"[BRAND_B]\") {\n    brand = \"[BRAND_B]\"; brand_code = \"BRAND-B2\"; default_partition = \"P4\"; \n}\n\n// ==========================================\n// 🛡️ 新增：在此处直接解析指令，并存入全局缓存\n// ==========================================\nconst langMap = {\n  'en': 'en', '英语': 'en', '英文': 'en', '英': 'en',\n  'ru': 'ru', '俄语': 'ru', '俄文': 'ru', '俄': 'ru',\n  'pt': 'pt', '葡语': 'pt', '葡萄牙': 'pt', '葡': 'pt', '巴西': 'pt',\n  'es': 'es', '西语': 'es', '西班牙': 'es', '西': 'es', '西语区': 'es',\n  'fa': 'fa', '波斯语': 'fa', '波斯': 'fa', '伊朗': 'fa'\n};\n\nlet selectedLangs = [];\nconst tokens = matchInput.replace(/[，,\\s\\/]+/g, ',').split(',');\n\nfor (let token of tokens) {\n  token = token.trim();\n  if (!token) continue;\n  if (['过', '通过', 'ok'].includes(token)) continue;\n  if (langMap[token] && !selectedLangs.includes(langMap[token])) {\n    selectedLangs.push(langMap[token]);\n  }\n}\n\n// 存入全局缓存，供跨工作流使用\nconst staticData = $getWorkflowStaticData('global');\nstaticData.selectedLangs = selectedLangs.length > 0 ? selectedLangs : ['en', 'ru', 'pt', 'es', 'fa'];\nconsole.log(\"🚀 已将审核指令存入全局，白名单: \", staticData.selectedLangs);\n// ==========================================\n\nreturn {\n  json: {\n    user_input: rawUserInput,       \n    draft_content: draftContent, \n    brand: brand,\n    brand_code: brand_code,             \n    default_partition: default_partition \n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -32
+      ],
+      "id": "0a04306d-7d02-426f-abaf-64a54a5f4733",
+      "name": "格式化代码"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. 接收工作流B返回的翻译结果\nconst data = $input.first().json;\n\n// 🚨 核心修复：从上游直接抓取真实品牌\nconst realBrand = $('格式化代码').first().json.brand || \"[BRAND_C]\";\ndata.brand = realBrand;\n\nconst staticData = $getWorkflowStaticData('global');\n\n// 🛡️ 直接从全局缓存读取白名单\nconst selectedLangs = staticData.selectedLangs || ['en', 'ru', 'pt', 'es', 'fa'];\nconst allLangs = ['en', 'ru', 'pt', 'es', 'fa'];\n\nconsole.log(\"🛡️ 开始执行拦截，当前白名单: \", selectedLangs);\n\n// 执行数据拦截：没有在白名单里的，直接清空\nfor (let lang of allLangs) {\n  if (!selectedLangs.includes(lang)) {\n    if (data[lang] !== undefined) {\n        data[lang] = \"\"; \n    }\n  }\n}\n\n// 存入全局缓存 (此时存的是被“安检”过的数据)\nstaticData.translatedTexts = data; \nstaticData.lastBrand = realBrand; \n\nreturn [{ json: data }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        -64
+      ],
+      "id": "0f48a1b1-fdb0-4f43-8c6d-fd4d56460a0d",
+      "name": "保存翻译结果"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f6653625-19a8-4bbf-8093-a1f31e3c7224",
+              "leftValue": "={{ $json.message.from.is_bot }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        368,
+        -32
+      ],
+      "id": "42aeafac-9969-4a34-bb8b-cb7fc5edec82",
+      "name": "验证"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "154a04fa-5d75-458b-b4df-f9c6a35a2f9e",
+              "leftValue": "={{ ($json.user_input || \"\").toLowerCase().includes('ok') || ($json.user_input || \"\").includes('通过') || ($json.user_input || \"\").includes('过') || ($json.user_input || \"\").includes('ok') }}",
+              "rightValue": "O",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        768,
+        0
+      ],
+      "id": "2a0ef3c4-5884-4c49-b468-e5d4efce728b",
+      "name": "是否进入翻译判定"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=用户的指令是：{{ $json.user_input }}\n\n【上一版草稿参考】\n{{ $json.draft_content }}\n目标输出语言：英文 (English)\n\n用户输入：{{ $json.user_input }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "【当前环境变量（绝对不可混淆）】\n- 当前处理品牌：{{ $json.brand }}\n- 品牌代码：{{ $json.brand_code }}\n- 场景分区：{{ $json.default_partition }}\n- 目标输出语言：English\n\n【用户当前指令】\n{{ $json.user_input }}\n\n【历史参考草稿】\n{{ $json.draft_content || \"无\" }}\n\n=====================\n🚨 最高任务优先级判定（必须先执行此判定，再开始生成）：\n请严格检查【历史参考草稿】：\n\n🔴 情况 A：如果【历史参考草稿】有内容（不为“无”），且用户指令是在修改这篇草稿\n- 动作：你不能调用工具。请直接基于草稿进行修改。\n- **致命警告**：修改时，必须严格检查签名、官网、Bot链接。如果原草稿里写的是“[BRAND_B]”等其他品牌，你必须强制将其全部替换为当前品牌【{{ $json.brand }}】的规范信息！\n\n🟢 情况 B：如果【历史参考草稿】为空（等于“无”），或者用户指令是一个全新的需求\n- 动作：你**必须完全无视**上方【历史参考草稿】的任何文字（就算有字也当没看见），绝对不能受它影响！\n- 动作：你必须先调用一次 Data Table 工具（查询时带入品牌代码 `{{ $json.brand_code }}`）。\n- 动作：严格按照查到的规范，结合用户的指令，撰写全新的公告。签名、链接必须且只能使用当前品牌【{{ $json.brand }}】的信息！\n- 注意：如果用户的需求仅仅是要“30个emoji”而不是写公告，请直接列出30个emoji，不要自作主张排版成公告。\n\n【排版红线（硬要求）】\n1. 段落之间必须空两行（使用 <br><br>）。\n2. 列表项（如 ✔ 或 •）必须每一项单独占一行。\n3. 加粗请直接使用 HTML 的 <b>文字</b> 标签。严禁使用 ** 这种 Markdown 语法。\n4. 严禁使用 <ul>、<li> 等列表标签。\n\n【终极输出格式禁令】\n严禁输出任何开场白或解释（如“好的，我来帮你...”）。直接输出最终结果。\n\n【Emoji 使用规则】\n你只能使用以下 emoji 清单中的符号，不得使用清单外的任何 emoji：\n✨ 🚨 👀 👍 ⬇️ 🔝 ⚠️ 🔥 ☀️ 🙂 😂 🆕 ✉️ ⚡️ ☄️ 🛍 ❗️ ‼️ ⁉️ ❓ 🌐 💬 💭 🕯 ✔️ ❌ 🆒 🔔 ➡️ 💥 📣 🛡 🔗 🔄 💯 🔜 📍 ➕ 💎 ⭐️ 👑 🗑 🔖 🔒 😮 🔈 🌈 ❄️ 🆓 🚀 🎉 🔓 💡",
+          "forceToolCallOnFirstIteration": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        928,
+        96
+      ],
+      "id": "11e22abe-c1af-4ac9-b6ee-200ad70642ed",
+      "name": "公告生成"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fullText = $json.output || \"\";\n// 确保这里一定能拿到品牌\nlet brand = $('格式化代码').first().json.brand || \"[BRAND_C]\";\n\n// 强制纠正品牌，防止串线\nconst lowerText = fullText.toLowerCase();\nif (lowerText.includes(\"[BRAND_A]\") || lowerText.includes(\"[BRAND_A]\")) {\n  brand = \"[BRAND_A]\";\n} else if (lowerText.includes(\"[BRAND_B]\")) {\n  brand = \"[BRAND_B]\";\n}\n\n// 🚨 核心：存进全局缓存！如果这一步没执行，后面全崩\nconst staticData = $getWorkflowStaticData('global');\nstaticData.lastDraft = fullText;\nstaticData.lastBrand = brand;\n\nreturn { json: { rawAiOutput: fullText, brand: brand } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        96
+      ],
+      "id": "7a00978b-4881-4a94-b149-2c21d3a3b367",
+      "name": "草稿全局缓存"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Emoji 字典（请根据你实际的需求，把全部字典补全）\nconst emojiMap = {\n  \"🚀\": '<tg-emoji emoji-id=\"5188481279963715781\">🚀</tg-emoji>',\n  \"🔥\": '<tg-emoji emoji-id=\"5424972470023104089\">🔥</tg-emoji>',\n  \"✔️\": '<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji>',\n  \"📣\": '<tg-emoji emoji-id=\"5424818078833715060\">📣</tg-emoji>',\n  // ... 如果你有其他 emoji，补充在这里\n};\n\nlet text = $json.rawAiOutput || \"\";\n\n// 统一把上游 AI 可能乱吐的 <br> 变成真正的换行符 \\n\ntext = text.replace(/<br\\s*\\/?>/gi, '\\n');\n\n// 1. 把 Markdown 的 ** 替换为 <b>\ntext = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>');\ntext = text.replace(/\\*(.*?)\\*/g, '<i>$1</i>');\ntext = text.replace(/\\[(.*?)\\]\\((.*?)\\)/g, '<a href=\"$2\">$1</a>'); // Markdown 链接转 HTML\n\n// 2. 强制排版：把列表项换行，解决拥挤\ntext = text.replace(/(?<!\\n)([•✔]|\\b\\d+\\.)/g, '\\n$1');\ntext = text.replace(/\\n{3,}/g, '\\n\\n').trim();\n\n// 3. 替换动态 Emoji\nfor (const [key, value] of Object.entries(emojiMap)) {\n  text = text.split(key).join(value);\n}\n\n// 生成两份文本\nconst draftText = text; // 给原生 TG 发草稿用的\nconst rawAiOutput = text.replace(/\\n/g, '<br>'); // 给最终 sendRichMessage 存缓存用的\n\nreturn {\n  json: {\n    rawAiOutput: rawAiOutput, \n    draftText: draftText,     \n    brand: $json.brand\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        96
+      ],
+      "id": "5f78890b-70d2-485d-90df-5662fade8f79",
+      "name": "草稿与品牌标签格式化"
+    },
+    {
+      "parameters": {
+        "chatId": "[REDACTED_CHAT_ID]",
+        "text": "={{ $json.draftText }}\n\n━━━━━━━━━━━━━━\n📝 <b>审核提示：</b>\n1. 若需<b>修改</b>，请直接回复修改意见；\n2. 若<b>审核通过</b>，请回复 <code>过</code> 加上需要翻译的语言（如：<code>过 EN, RU</code>）。\n💡 如果全语言都要发送，直接回复 <code>过</code> 即可。",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1536,
+        96
+      ],
+      "id": "008ace50-dde6-4012-84c0-1d4460da03c8",
+      "name": "发送草稿",
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "[REDACTED_DATATABLE_ID]",
+          "mode": "list",
+          "cachedResultName": "SKILL_TABLE",
+          "cachedResultUrl": "/projects/[REDACTED_PROJECT_ID]/datatables/[REDACTED_DATATABLE_ID]"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "metadata_partition",
+              "keyValue": "=COMMON"
+            },
+            {
+              "keyName": "metadata_partition",
+              "keyValue": "={{ $('格式化代码').first().json.brand_code }}"
+            },
+            {
+              "keyName": "metadata_partition",
+              "keyValue": "={{ $('格式化代码').first().json.default_partition }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1.1,
+      "position": [
+        1296,
+        304
+      ],
+      "id": "fa823ce8-1003-4b70-bbcd-2da6feab1e8b",
+      "name": "Get row(s) in Data table",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "chatId": "[REDACTED_CHAT_ID]",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1776,
+        -48
+      ],
+      "id": "c5c87bf5-e656-4548-b9ff-37acda2f00ee",
+      "name": "发送本地化草稿",
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-6-luna",
+          "mode": "list",
+          "cachedResultName": "gpt-6-luna"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1152,
+        304
+      ],
+      "id": "3e3c2889-68ea-4b66-ae26-48a55d0edb22",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst trans = staticData.translatedTexts || {};\n\n// 修正：只要有任意语言的数据，就放行（不再强制要求必须有 en）\nconst hasAnyData = Object.values(trans).some(val => val && String(val).trim() !== \"\");\nif (!hasAnyData) {\n    throw new Error(\"缓存中无数据，请先完成一审和翻译。\");\n}\n\n// 直接把触发器的 message 透传下去，为下载图片节点提供上下文\nconst triggerData = $('本地化审核触发').first().json;\nreturn [{ json: { message: triggerData.message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        976
+      ],
+      "id": "49566498-8ebf-4f3f-a85e-a4f15da4e4d4",
+      "name": "读取最终缓存"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\n\n// 🎯 终极硬编码字典（53条，彻底摆脱 staticData 和外部依赖）\nconst rawEmojiMap = {\n  \"✨\": \"5325547803936572038\", \"🚨\": \"5395695537687123235\", \"👀\": \"5210956306952758910\",\n  \"👍\": \"5337080053119336309\", \"⬇️\": \"5406745015365943482\", \"🔝\": \"5415655814079723871\",\n  \"⚠️\": \"5420323339723881652\", \"🔥\": \"5424972470023104089\", \"☀️\": \"5402477260982731644\",\n  \"🙂\": \"5461117441612462242\", \"😂\": \"5264871731499115778\", \"🆕\": \"5382357040008021292\",\n  \"✉️\": \"5253742260054409879\", \"⚡️\": \"5456140674028019486\", \"☄️\": \"5224607267797606837\",\n  \"🛍\": \"5229064374403998351\", \"❗️\": \"5274099962655816924\", \"‼️\": \"5440660757194744323\",\n  \"⁉️\": \"5314504236132747481\", \"❓\": \"5436113877181941026\", \"🌐\": \"5447410659077661506\",\n  \"💬\": \"5443038326535759644\", \"💭\": \"5467538555158943525\", \"🕯\": \"5451882707875276247\",\n  \"✔️\": \"5206607081334906820\", \"❌\": \"5210952531676504517\", \"🆒\": \"5222079954421818267\",\n  \"🔔\": \"5458603043203327669\", \"➡️\": \"5416117059207572332\", \"💥\": \"5276032951342088188\",\n  \"📣\": \"5424818078833715060\", \"🛡\": \"5251203410396458957\", \"🔗\": \"5271604874419647061\",\n  \"🔄\": \"5375338737028841420\", \"💯\": \"5341498088408234504\", \"🔜\": \"5440621591387980068\",\n  \"📍\": \"5391032818111363540\", \"➕\": \"5397916757333654639\", \"💎\": \"5427168083074628963\",\n  \"⭐️\": \"5438496463044752972\", \"👑\": \"5217822164362739968\", \"🗑\": \"5445267414562389170\",\n  \"🔖\": \"5222444124698853913\", \"🔒\": \"5296369303661067030\", \"😮\": \"5303479226882603449\",\n  \"🔈\": \"5388632425314140043\", \"🌈\": \"5409109841538994759\", \"❄️\": \"5449449325434266744\",\n  \"🆓\": \"5406756500108501710\", \"🚀\": \"5188481279963715781\", \"🎉\": \"5461151367559141950\",\n  \"🔓\": \"5429405838345265327\", \"💡\": \"5422439311196834318\"\n};\n\nconst trans = staticData.translatedTexts || {};\nif (!Object.values(trans).some(val => val && String(val).trim() !== \"\")) {\n    throw new Error(\"缓存中无数据，请先完成翻译。\");\n}\n\nconst binaryData = $input.first().binary;\nif (!binaryData) throw new Error(\"没有找到图片数据！\");\n\nconst finalBrand = trans.brand || \"[BRAND_C]\";\n\n// 🚨 核心清洗逻辑\nconst cleanText = (text) => {\n    if (!text) return \"\";\n    \n    // 1. 基础排版替换\n    let cleaned = text\n        .replace(/<br\\s*\\/?>/gi, '\\n')\n        .replace(/<\\/?ul[^>]*>/gi, '')\n        .replace(/<li[^>]*>/gi, '\\n• ')\n        .replace(/<\\/li>/gi, '')\n        .replace(/<\\/?p[^>]*>|<\\/?div[^>]*>/gi, '\\n\\n')\n        .replace(/\\n{3,}/g, '\\n\\n')\n        .replace(/\\n/g, '<br>')\n        // 强制把 AI 的 Markdown 粗体转为 HTML\n        .replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>');\n\n    // 2. 精准 Emoji 替换（Segmenter 不会切碎组合表情）\n    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });\n    let result = \"\";\n    \n    for (const { segment } of segmenter.segment(cleaned)) {\n        // 查字典，查不到就去掉所有变体符(FE0F/FE0E/ZWJ)再查一次（兼容新模型乱拉屎）\n        const cleanSegment = segment.trim();\n        const baseSegment = cleanSegment.replace(/[\\uFE0E\\uFE0F\\u200D]/g, '');\n        \n        let id = rawEmojiMap[cleanSegment] || rawEmojiMap[baseSegment];\n        \n        if (id) {\n            const pureId = String(id).replace(/[^0-9]/g, ''); // 剥离可能的标签外壳，只留纯数字ID\n            result += `<tg-emoji emoji-id=\"${pureId}\">${cleanSegment}</tg-emoji>`;\n        } else {\n            result += segment;\n        }\n    }\n    return result.trim();\n};\n\nconst buildRichMessage = (text) => {\n    return JSON.stringify({\n        html: `<img src=\"tg://photo?id=poster\"/><br>${text}`,\n        media: [{ id: 'poster', media: { type: 'photo', media: 'attach://photo_file' } }]\n    });\n};\n\nconst tasks = [];\nfor (const lang of ['en', 'ru', 'pt', 'es', 'fa']) {\n    const rawText = trans[lang];\n    if (rawText && rawText.trim() !== \"\") {\n        tasks.push({\n            json: {\n                brand: finalBrand,\n                lang: lang.toUpperCase(),\n                rich_message: buildRichMessage(cleanText(rawText))\n            },\n            binary: binaryData \n        });\n    }\n}\n\nstaticData.translatedTexts = null;\nreturn tasks;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        912
+      ],
+      "id": "7b8f2457-4527-4268-a3a9-3f41313bad9d",
+      "name": "合并图片文字"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('本地化审核触发').item.json.message.photo[$('本地化审核触发').item.json.message.photo.length - 1].file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        928
+      ],
+      "id": "fb62db84-fd2c-4e22-9bf8-4a4a5d314354",
+      "name": "下载图片",
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1216,
+        576
+      ],
+      "id": "a7e305ef-5747-441a-814d-cccfc6615647",
+      "name": "发送到俄语频道"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1392,
+        656
+      ],
+      "id": "a331bc42-f241-4db0-874e-79963e4f1786",
+      "name": "发送到伊朗频道"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1216,
+        704
+      ],
+      "id": "e7907445-fd54-4126-84e5-fb1a17a378c4",
+      "name": "发送到西语频道"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1600,
+        512
+      ],
+      "id": "2a3e9e6f-0470-4d33-b192-9073b18715eb",
+      "name": "发送到葡语频道"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1440,
+        448
+      ],
+      "id": "577ff405-d1ce-4965-9126-fd9c39d51b06",
+      "name": "发送到英语频道"
+    },
+    {
+      "parameters": {
+        "content": "[BRAND_B]",
+        "height": 464,
+        "width": 384,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1392,
+        416
+      ],
+      "typeVersion": 1,
+      "id": "15ee8d0b-2aba-471a-a0f1-5276f577a8c1",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1664,
+        1120
+      ],
+      "id": "641e3b87-46ef-4654-b43a-59484a1183eb",
+      "name": "发送到俄语频道1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1456,
+        992
+      ],
+      "id": "4770293b-0032-4728-82cf-051b9087b511",
+      "name": "发送到英语频道1"
+    },
+    {
+      "parameters": {
+        "content": "[BRAND_A] ",
+        "height": 368,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1600,
+        928
+      ],
+      "typeVersion": 1,
+      "id": "f3796d99-043d-4ef0-9f82-ac193eaafe1c",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1360,
+        1008
+      ],
+      "id": "7fdd6ea1-420a-4bcf-8071-09417a0b05f9",
+      "name": "发送到英语频道2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendRichMessage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{CHANNEL_CHAT_ID}}"
+            },
+            {
+              "name": "rich_message",
+              "value": "={{ $json.rich_message }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "photo_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1344,
+        1136
+      ],
+      "id": "ab33b68e-3fc6-4c67-abf6-a511118b6415",
+      "name": "发送到俄语频道2"
+    },
+    {
+      "parameters": {
+        "content": "[BRAND_C]",
+        "height": 336,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1328,
+        944
+      ],
+      "typeVersion": 1,
+      "id": "80709425-081d-46ec-b645-d434d6b3aa90",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.message;\nif (!msg.reply_to_message) throw new Error(\"没有引用消息！\");\n\nconst rawReplyText = msg.reply_to_message.text || \"\";\nconst opinion = msg.text || \"\";\n\nlet targetLang = \"\";\nif (rawReplyText.includes(\"🇺🇸 EN:\")) targetLang = \"en\";\nelse if (rawReplyText.includes(\"🇷🇺 RU:\")) targetLang = \"ru\";\nelse if (rawReplyText.includes(\"🇵🇹 PT:\")) targetLang = \"pt\";\nelse if (rawReplyText.includes(\"🇪🇸 ES:\")) targetLang = \"es\";\nelse if (rawReplyText.includes(\"🇮🇷 FA:\")) targetLang = \"fa\";\n\nif (!targetLang) throw new Error(\"找不到语言前缀！\");\n\n// 🚨 从 translatedTexts 缓存中拿带 HTML 的原文\nconst staticData = $getWorkflowStaticData('global');\nconst currentTexts = staticData.translatedTexts || {};\nlet originalText = currentTexts[targetLang] || rawReplyText.replace(/^🇺🇸 EN:|^🇷🇺 RU:|^🇵🇹 PT:|^🇪🇸 ES:|^🇮🇷 FA:/, \"\").trim();\n\nreturn [{ json: { targetLang, originalText, opinion } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        1136
+      ],
+      "id": "b3dc9702-ee03-4ffc-9f37-3d2c0cdd8e62",
+      "name": "提取旧数据和意见"
+    },
+    {
+      "parameters": {
+        "jsCode": "let aiOutput = $json.output || \"\";\nlet cleanOutput = aiOutput.replace(/```json/g, \"\").replace(/```/g, \"\").trim();\nlet parsed = {};\ntry {\n    parsed = JSON.parse(cleanOutput);\n} catch (e) {\n    const jsonMatch = cleanOutput.match(/\\{[\\s\\S]*\\}/);\n    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);\n    else throw new Error(`AI 输出格式错误`);\n}\n\nconst newText = parsed.rewrittenText;\nif (!newText || newText.length < 5) throw new Error(`AI 未正确生成文本`);\n\n// 1. 精准更新 translatedTexts 缓存\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.translatedTexts) staticData.translatedTexts = {};\nconst targetLang = $('提取旧数据和意见').item.json.targetLang;\n\nstaticData.translatedTexts[targetLang] = newText;\n\n// 🚨 核心修改：取出更新后的全量数据，准备重新发送二审\nconst trans = staticData.translatedTexts;\nconst langs = [\n  { flag: \"🇺🇸 EN:\", text: trans.en },\n  { flag: \"🇷🇺 RU:\", text: trans.ru },\n  { flag: \"🇵🇹 PT:\", text: trans.pt },\n  { flag: \"🇪🇸 ES:\", text: trans.es },\n  { flag: \"🇮🇷 FA:\", text: trans.fa }\n];\n\n// 过滤空文本，组装成跟一审一模一样的格式\nconst messages = langs\n  .filter(l => l.text && l.text.trim().length > 0)\n  .map(l => ({\n    // 去掉 HTML 的 <br>，替换为真实换行符发给 TG 节点\n    json: { text: `${l.flag}\\n${l.text.replace(/<br\\s*\\/?>/gi, '\\n')}` }\n  }));\n\n// 最后加上一条提示消息\nmessages.push({ \n    json: { text: `-------------------\\n修改已生效，请重新审核以上全量草稿。\\n若需继续修改，请长按引用；\\n若确认无误，请直接发送一张图片执行终极发布。` } \n});\n\n// 返回包含多条的数组\nreturn messages;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        1200
+      ],
+      "id": "1eaa8828-cae6-48d2-a254-dad587832dd7",
+      "name": "解析新翻译并存入缓存"
+    },
+    {
+      "parameters": {
+        "chatId": "[REDACTED_CHAT_ID]",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1168,
+        1168
+      ],
+      "id": "8df010bf-7510-4e17-812e-188f2e97f653",
+      "name": "发回二审提示",
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2486c5dd-0c10-46ac-9ef6-3bf341689185",
+              "leftValue": "={{ !!$json.message.photo }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        1072
+      ],
+      "id": "b66a931c-579c-43c5-b61a-24b4da372ae1",
+      "name": "是否是审核后的配图信息"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=你是一个翻译润色助手。\n请根据修改意见，重写下面的文本。\n\n原文：{{ $json.originalText }}\n修改意见：{{ $json.opinion }}\n\n【死命令】\n1. 必须完整保留原文中的所有 HTML 格式标签（如 <b>、<a href=\"...\">、<br> 等），绝对不可将其转换为纯文本或 Markdown。\n2. 保留所有 Emoji。\n3. 严格输出合法的 JSON 格式，不要包含任何 Markdown 代码块符号，不要任何解释。格式如下：\n{\"rewrittenText\": \"这里填重写后的带 HTML 标签的文本\"}\n\n🚨🚨【最高级别格式保护铁律】🚨🚨\n在输出文本时，你必须严格遵守以下排版规则，绝不允许篡改原文格式：\n1. 绝对禁止使用 Markdown 语法！绝对禁止输出 `**` 符号！\n2. 如果需要加粗文字，必须且只能原样保留或输出 HTML 标签：<b>文字内容</b>。\n3. 原文中如果带有 <tg-emoji emoji-id=\"...\"> 格式的标签，必须原封不动地保留，禁止删除、禁止修改其中的 emoji-id 数字、禁止将其转换为普通表情！",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        576,
+        1120
+      ],
+      "id": "e2175f83-149c-4dca-ab88-0eeb6e92050e",
+      "name": "修改本地化版本"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        48,
+        1056
+      ],
+      "id": "681b528b-ae33-4da4-9424-a1d5e877a04b",
+      "name": "本地化审核触发",
+      "credentials": {
+        "telegramApi": {
+          "id": "[REDACTED_CRED_ID]",
+          "name": "[REDACTED_CRED_NAME]"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-6-luna",
+          "mode": "list",
+          "cachedResultName": "gpt-6-luna"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        576,
+        1312
+      ],
+      "id": "ed2806b3-a02f-4930-a4d0-2fe4103525fc",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst staticData = $getWorkflowStaticData('global');\n// 缓存已经在上一节点存过了，这里直接发\n\nconst langs = [\n  { flag: \"🇺🇸 EN:\", text: data.en },\n  { flag: \"🇷🇺 RU:\", text: data.ru },\n  { flag: \"🇵🇹 PT:\", text: data.pt },\n  { flag: \"🇪🇸 ES:\", text: data.es },\n  { flag: \"🇮🇷 FA:\", text: data.fa }\n];\n\nconst messages = langs\n  .filter(l => l.text && l.text.trim().length > 0)\n  .map(l => ({\n    // 原生 TG 节点用真实的换行，并且你已经在节点里开启了 HTML mode，<b> 会被正常渲染\n    json: { text: `${l.flag}\\n${l.text.replace(/<br\\s*\\/?>/gi, '\\n')}` }\n  }));\n\nmessages.push({ json: { text: `-------------------\\n请直接发送一张图片执行终极发布。\\n若需修改，请长按上方任意一条语言消息引用回复。` } });\n\nreturn messages;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -64
+      ],
+      "id": "e741ca9f-9c51-492b-965a-595ffa3a1c1b",
+      "name": "分语言发送"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "[REDACTED_WORKFLOW_ID]",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/[REDACTED_WORKFLOW_ID]",
+          "cachedResultName": "SUBTLE_WORKFLOW"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "masterText": "={{ $json.draft_content }}",
+            "brand": "={{ $json.brand }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "masterText",
+              "displayName": "masterText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "brand",
+              "displayName": "brand",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        992,
+        -64
+      ],
+      "id": "9e40e5f4-74c8-49b8-81df-994e8dda301f",
+      "name": "Call 'TG 公告生成·审核·发布'"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 9,
+        "output": "={{ (() => {\n  const brand = $json.brand;\n  const lang = $json.lang; // 上一步我们存的带了大写后缀的字段\n\n  // 定义品牌的起始端口\n  const startMap = {\n    \"[BRAND_B]\": 0,\n    \"[BRAND_A]\": 5,\n    \"[BRAND_C]\": 7\n  };\n  \n  // 定义语言的偏移量\n  const langMap = {\n    \"EN\": 0,\n    \"RU\": 1,\n    \"PT\": 2,\n    \"ES\": 3,\n    \"FA\": 4\n  };\n\n  const start = startMap[brand];\n  const offset = langMap[lang];\n\n  // 如果算不出结果，默认返回 0（防止报错），但正常流程绝不会走到这里\n  if (start === undefined || offset === undefined) {\n    return 0; \n  }\n\n  // 直接返回最终的端口编号\n  return start + offset;\n})() }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        784
+      ],
+      "id": "e68e09e5-53be-43b1-83b3-dfed7ec338be",
+      "name": "品牌与语言分流"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. 获取 AI 刚生成的新翻译数据（假设上个节点叫“解析新翻译并存入缓存”）\n// 注意：这里去读取上游节点的输出，如果是单条文本，直接提取\nconst item = $input.first().json;\nconst rawText = item.text || item.content || item.output || \"\";\n\n// 2. 取出 920+ 字典\nconst staticData = $getWorkflowStaticData('global');\nconst rawEmojiMap = staticData.globalEmojiMap || {};\n\n// 3. 核心清洗函数\nconst cleanText = (text) => {\n    if (!text) return \"\";\n    let cleaned = text\n        .replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>'); // 顺手修一下粗体\n\n    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });\n    let result = \"\";\n    \n    for (const { segment } of segmenter.segment(cleaned)) {\n        // 查字典（兼容变体符）\n        const id = rawEmojiMap[segment] || rawEmojiMap[segment.replace(/\\uFE0F/g, '')];\n        \n        if (id) {\n            const cleanId = String(id).replace(/[^0-9]/g, '');\n            result += `<tg-emoji emoji-id=\"${cleanId}\">${segment}</tg-emoji>`;\n        } else {\n            result += segment;\n        }\n    }\n    return result.trim();\n};\n\n// 4. 返回清洗后的文本给 TG 节点发送\nreturn [{\n    json: {\n        ...item, // 保留原有的所有字段\n        text: cleanText(rawText) // 把清洗后的文本回写\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        880
+      ],
+      "id": "835e6434-632a-4685-b5fa-5d20a0418ca1",
+      "name": "emoji预清洗"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1. 精选字典（采样去重，共 53 个）\nconst emojiPairs = [\n  [\"✨\", \"5325547803936572038\"],\n  [\"🚨\", \"5395695537687123235\"],\n  [\"👀\", \"5210956306952758910\"],\n  [\"👍\", \"5337080053119336309\"],\n  [\"⬇️\", \"5406745015365943482\"],\n  [\"🔝\", \"5415655814079723871\"],\n  [\"⚠️\", \"5420323339723881652\"],\n  [\"🔥\", \"5424972470023104089\"],\n  [\"☀️\", \"5402477260982731644\"],\n  [\"🙂\", \"5461117441612462242\"],\n  [\"😂\", \"5264871731499115778\"],\n  [\"🆕\", \"5382357040008021292\"],\n  [\"✉️\", \"5253742260054409879\"],\n  [\"⚡️\", \"5456140674028019486\"],\n  [\"☄️\", \"5224607267797606837\"],\n  [\"🛍\", \"5229064374403998351\"],\n  [\"❗️\", \"5274099962655816924\"],\n  [\"‼️\", \"5440660757194744323\"],\n  [\"⁉️\", \"5314504236132747481\"],\n  [\"❓\", \"5436113877181941026\"],\n  [\"🌐\", \"5447410659077661506\"],\n  [\"💬\", \"5443038326535759644\"],\n  [\"💭\", \"5467538555158943525\"],\n  [\"🕯\", \"5451882707875276247\"],\n  [\"✔️\", \"5206607081334906820\"],\n  [\"❌\", \"5210952531676504517\"],\n  [\"🆒\", \"5222079954421818267\"],\n  [\"🔔\", \"5458603043203327669\"],\n  [\"➡️\", \"5416117059207572332\"],\n  [\"💥\", \"5276032951342088188\"],\n  [\"📣\", \"5424818078833715060\"],\n  [\"🛡\", \"5251203410396458957\"],\n  [\"🔗\", \"5271604874419647061\"],\n  [\"🔄\", \"5375338737028841420\"],\n  [\"💯\", \"5341498088408234504\"],\n  [\"🔜\", \"5440621591387980068\"],\n  [\"📍\", \"5391032818111363540\"],\n  [\"➕\", \"5397916757333654639\"],\n  [\"💎\", \"5427168083074628963\"],\n  [\"⭐️\", \"5438496463044752972\"],\n  [\"👑\", \"5217822164362739968\"],\n  [\"🗑\", \"5445267414562389170\"],\n  [\"🔖\", \"5222444124698853913\"],\n  [\"🔒\", \"5296369303661067030\"],\n  [\"😮\", \"5303479226882603449\"],\n  [\"🔈\", \"5388632425314140043\"],\n  [\"🌈\", \"5409109841538994759\"],\n  [\"❄️\", \"5449449325434266744\"],\n  [\"🆓\", \"5406756500108501710\"],\n  [\"🚀\", \"5188481279963715781\"],\n  [\"🎉\", \"5461151367559141950\"],\n  [\"🔓\", \"5429405838345265327\"],\n  [\"💡\", \"5422439311196834318\"],\n];\n\n// 2. 获取文本\nconst item = $json;\nconst rawText = item.text || \"\"; \n\n// 3. 构建极速查询 Map\nconst rawEmojiMap = {};\nfor (let i = 0; i < emojiPairs.length; i++) {\n    const emoji = emojiPairs[i][0];\n    const id = emojiPairs[i][1];\n    rawEmojiMap[emoji] = id;\n    const noVariant = emoji.replace(/\\uFE0F/g, '');\n    if (noVariant !== emoji) {\n        rawEmojiMap[noVariant] = id;\n    }\n}\n\n// 4. 核心清洗逻辑\nconst cleanText = (text) => {\n    if (!text) return \"\";\n    let cleaned = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>'); \n\n    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });\n    let result = \"\";\n    \n    for (const { segment } of segmenter.segment(cleaned)) {\n        const cleanSegment = segment.trim();\n        const noVariantSegment = cleanSegment.replace(/\\uFE0F/g, '');\n        \n        let id = rawEmojiMap[cleanSegment] || rawEmojiMap[noVariantSegment];\n        \n        if (id) {\n            const pureId = String(id).replace(/[^0-9]/g, '');\n            result += `<tg-emoji emoji-id=\"${pureId}\">${cleanSegment}</tg-emoji>`;\n        } else {\n            result += segment;\n        }\n    }\n    return result.trim();\n};\n\n// 5. 返回结果\nreturn {\n    json: {\n        ...item, \n        text: cleanText(rawText) \n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        -96
+      ],
+      "id": "1bff8573-e6ac-4197-85c3-ffc16943af18",
+      "name": "emoji预清洗1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "验证",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "筛选并拆分品牌与内容": {
+      "main": [
+        [
+          {
+            "node": "格式化代码",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "格式化代码": {
+      "main": [
+        [
+          {
+            "node": "是否进入翻译判定",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "保存翻译结果": {
+      "main": [
+        [
+          {
+            "node": "分语言发送",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证": {
+      "main": [
+        [
+          {
+            "node": "筛选并拆分品牌与内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否进入翻译判定": {
+      "main": [
+        [
+          {
+            "node": "Call 'TG 公告生成·审核·发布'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "公告生成",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "公告生成": {
+      "main": [
+        [
+          {
+            "node": "草稿全局缓存",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "草稿全局缓存": {
+      "main": [
+        [
+          {
+            "node": "草稿与品牌标签格式化",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "草稿与品牌标签格式化": {
+      "main": [
+        [
+          {
+            "node": "发送草稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in Data table": {
+      "ai_tool": [
+        [
+          {
+            "node": "公告生成",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "公告生成",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取最终缓存": {
+      "main": [
+        [
+          {
+            "node": "下载图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并图片文字": {
+      "main": [
+        [
+          {
+            "node": "品牌与语言分流",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载图片": {
+      "main": [
+        [
+          {
+            "node": "合并图片文字",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取旧数据和意见": {
+      "main": [
+        [
+          {
+            "node": "修改本地化版本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析新翻译并存入缓存": {
+      "main": [
+        [
+          {
+            "node": "发回二审提示",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否是审核后的配图信息": {
+      "main": [
+        [
+          {
+            "node": "读取最终缓存",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提取旧数据和意见",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "修改本地化版本": {
+      "main": [
+        [
+          {
+            "node": "解析新翻译并存入缓存",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "本地化审核触发": {
+      "main": [
+        [
+          {
+            "node": "是否是审核后的配图信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "修改本地化版本",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分语言发送": {
+      "main": [
+        [
+          {
+            "node": "emoji预清洗1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'TG 公告生成·审核·发布'": {
+      "main": [
+        [
+          {
+            "node": "保存翻译结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "品牌与语言分流": {
+      "main": [
+        [
+          {
+            "node": "发送到英语频道",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到俄语频道",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到葡语频道",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到西语频道",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到伊朗频道",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到英语频道1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到俄语频道1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到英语频道2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送到俄语频道2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "emoji预清洗": {
+      "main": [
+        []
+      ]
+    },
+    "emoji预清洗1": {
+      "main": [
+        [
+          {
+            "node": "发送本地化草稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "REDACTED_VERSION_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "REDACTED_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "REDACTED_WORKFLOW_ID",
+  "tags": []
+}
